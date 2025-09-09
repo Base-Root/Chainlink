@@ -817,7 +817,7 @@
     }
 
     function showPage(id) {
-        const pages = ['landing', 'loading', 'loading-disconnect', 'home', 'discover', 'swap', 'trade', 'memes', 'settings', 'deposit', 'send', 'transfer', 'dfi'];
+        const pages = ['landing', 'loading', 'loading-disconnect', 'home', 'discover', 'swap', 'trade', 'memes', 'settings', 'deposit', 'send', 'transactions','transfer', 'dfi'];
         pages.forEach(p => {
             const el = document.getElementById(p);
             if (!el) return;
@@ -1272,20 +1272,20 @@ getAppBtn.addEventListener('click', () => {
         });
 
         // Simulating transactions
-        const TransactionManager = {
-       currentFilter: "all",
-           currentSearch: "",
-           transactions: [],
-          lastVisiblePage: null, // Store last visible page
+ const TransactionManager = {
+  currentFilter: "all",
+  currentSearch: "",
+  transactions: [],
+  lastVisiblePage: null, // Store last visible page
 
-         async fetchAll() {
-           try {
-           let page = 1;
-           const limit = 50;
-           let hasMore = true;
-           let allTx = [];
+  async fetchAll() {
+    try {
+      let page = 1;
+      const limit = 50;
+      let hasMore = true;
+      let allTx = [];
 
-            while (hasMore) {
+      while (hasMore) {
         // Replace with your real public API endpoint
         const res = await fetch(`https://api.example.com/transactions?page=${page}&limit=${limit}`);
         const data = await res.json();
@@ -1403,9 +1403,9 @@ document.addEventListener("DOMContentLoaded", () => {
         TransactionManager.lastVisiblePage.classList.remove("hidden-page");
         TransactionManager.lastVisiblePage.scrollIntoView({ behavior: "smooth" });
       }
-       });
-       }
-       });
+    });
+      }
+    });
 
         // Render TradingView chart for DFI
         renderTV('dfiChart', 'BITTREX:DFIUSD');
